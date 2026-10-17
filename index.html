@@ -661,6 +661,10 @@ function fillIsland(c){if(c.water||!c.tiles.length)return;
   for(let qi=0;qi<Q.length;qi++){const t=Q[qi],tx=t%TW,ty=t/TW|0;
     for(const n of [tx>0?t-1:-1,tx<TW-1?t+1:-1,ty>0?t-TW:-1,ty<TH-1?t+TW:-1]){if(n<0||seen[n])continue;seen[n]=1;
       if(waterAt((n%TW+.5)*TS,((n/TW|0)+.5)*TS)||URB[n]&&URB[n]!==c.ci)continue;if(!URB[n]){urbanize(c,n);add++}Q.push(n)}}
+  // 바다 위로도 건물을 넓힘: 이 도시 땅에서 25칸(200)까지 (다른 도시 칸은 건드리지 않음)
+  const dist=new Int16Array(TW*TH).fill(-1),Q2=[];for(const t of c.tiles)if(URB[t]===c.ci&&!waterAt((t%TW+.5)*TS,((t/TW|0)+.5)*TS)){dist[t]=0;Q2.push(t)}
+  for(let qi=0;qi<Q2.length;qi++){const t=Q2[qi],tx=t%TW,ty=t/TW|0;if(dist[t]>=25)continue;
+    for(const n of [tx>0?t-1:-1,tx<TW-1?t+1:-1,ty>0?t-TW:-1,ty<TH-1?t+TW:-1]){if(n<0||dist[n]>=0)continue;if(URB[n]&&URB[n]!==c.ci)continue;dist[n]=dist[t]+1;if(!URB[n]){urbanize(c,n);add++}Q2.push(n)}}
   if(add||!c.gates)makeGates(c)}
 function makeGates(c){const G=[]; // 바닷가 쪽 벽에 입구(문 + 나무 부두)
   for(const t of c.tiles){if(URB[t]!==c.ci)continue;const tx=t%TW,ty=t/TW|0;
@@ -668,6 +672,8 @@ function makeGates(c){const G=[]; // 바닷가 쪽 벽에 입구(문 + 나무 �
       if(URB[n]||!waterAt((nx+.5)*TS,(ny+.5)*TS))continue;const x=(tx+.5)*TS,y=(ty+.5)*TS;
       if(G.every(g=>(g.x-x)**2+(g.y-y)**2>170*170))G.push({x,y,dx,dy,px:x+dx*14,py:y+dy*14});break}
     if(G.length>=14)break}
+  for(let ty=6;ty<TH;ty+=30)for(let tx=6+(ty/30%2)*20;tx<TW;tx+=40){const t=ty*TW+tx;if(URB[t]!==c.ci)continue;const x=(tx+.5)*TS,y=(ty+.5)*TS; // 지붕 위 옥상 입구
+    if(G.every(g=>(g.x-x)**2+(g.y-y)**2>170*170))G.push({x,y,dx:0,dy:0,px:x,py:y,roof:true})}
   c.gates=G}
 const landCity=(x,y)=>{const u=URB[tIdx(x,y)],cc=u&&W.civs[u-1];return cc&&cc.city&&!cc.city.water?cc.city:null};
 function nearPier(x,y){for(const civ of W.civs){const c=civ.city;if(!c||!c.gates)continue;for(const g of c.gates)if((g.x+g.dx*10-x)**2+(g.y+g.dy*10-y)**2<64)return true}return false}
@@ -676,7 +682,9 @@ function nearestGate(c,o){let best=null,bd=1e18;for(const g of c.gates||[]){cons
 const canGo=(g,x,y)=>x>1&&y>1&&x<WW-1&&y<WH-1; // 조종할 땐 어디든: 지붕 위도 걷고, 물에선 헤엄침 (건물 안은 입구 버튼으로만)
 function drawGates(c,z){const tt=performance.now()/300;
   for(const civ of W.civs){const ct=civ.city;if(!ct||ct.water||!ct.gates)continue;
-    for(const g of ct.gates){c.save();c.translate(g.x,g.y);c.rotate(Math.atan2(g.dy,g.dx));
+    for(const g of ct.gates){if(g.roof){c.fillStyle=`rgba(255,220,120,${.3+.2*Math.sin(tt)})`;c.beginPath();c.arc(g.x,g.y,8,0,6.283);c.fill();c.fillStyle='#5a4a30';c.fillRect(g.x-4,g.y-4,8,8);c.fillStyle='#ffd27a';c.fillRect(g.x-3,g.y-3,6,6);c.fillStyle='#5a4a30';c.fillRect(g.x-.4,g.y-3,.8,6);c.fillRect(g.x-3,g.y-.4,6,.8); // 옥상 입구(뚜껑 문)
+        if(z>2.5){c.fillStyle='#fff';c.font='bold 4px sans-serif';c.textAlign='center';c.fillText('옥상 입구',g.x,g.y-7)}continue}
+      c.save();c.translate(g.x,g.y);c.rotate(Math.atan2(g.dy,g.dx));
       c.fillStyle='#8a6a44';c.fillRect(3,-3.5,14,7);c.fillStyle='rgba(0,0,0,.28)';for(let k=0;k<5;k++)c.fillRect(5+k*2.6,-3.5,.5,7); // 나무 부두
       c.fillStyle=`rgba(255,220,120,${.3+.2*Math.sin(tt)})`;c.beginPath();c.arc(3,0,6,0,6.283);c.fill();c.fillStyle='#ffd27a';c.fillRect(1.6,-3,2.2,6); // 빛나는 문
       c.restore();if(z>2.5){c.fillStyle='#fff';c.font='bold 4px sans-serif';c.textAlign='center';c.fillText('입구',g.x+g.dx*9,g.y+g.dy*9-5)}}}}
@@ -1342,44 +1350,44 @@ function enterInside(up,cArg,at){
   const adj=new Map(),E=new Set();
   for(const [k,[i,j]] of nodes){const L=[];for(const [u,v] of [[1,0],[-1,0],[0,1],[0,-1]])if(nodes.has(key(i+u,j+v))&&edgeOK(i,j,u,v)){L.push([i+u,j+v]);if(u>0)E.add(k+'h');if(v>0)E.add(k+'v')}adj.set(k,L)}
   const iMin=Math.min(...[...nodes.values()].map(n=>n[0])),rowMin=Math.min(...[...nodes.values()].filter(n=>n[1]===sj0).map(n=>n[0]));
-  const SX=up?i=>wx(i)-12:i=>430+(i-iMin)*GX,SY=up?j=>wy(j)-12:j=>110+(j-sj0)*GY,bld=[],walk=[],cars=[]; // 땅 위 큰 건물은 바깥 지도와 같은 자리
+  const K=2.5,SW=48,SX=up?i=>wx(i)*K-SW/2:i=>430+(i-iMin)*GX*K,SY=up?j=>wy(j)*K-SW/2:j=>110+(j-sj0)*GY*K,bld=[],walk=[],cars=[]; // 아주 크게: 바깥 지도의 2.5배 (위치는 그대로 맞음) // 땅 위 큰 건물은 바깥 지도와 같은 자리
   if(!up)room(262,112,SX(rowMin)-262+4,22,'hall2','땅속 거리로 가는 길');
   const STREET=up?'건물 안 복도':'땅속 거리';
-  for(const [k,[i,j]] of nodes){if(E.has(k+'h'))room(SX(i),SY(j),GX+24,24,'street',STREET);if(E.has(k+'v'))room(SX(i),SY(j),24,GY+24,'street',STREET);if(!adj.get(k).length)room(SX(i),SY(j),24,24,'street',STREET)}
+  for(const [k,[i,j]] of nodes){if(E.has(k+'h'))room(SX(i),SY(j),GX*K+SW,SW,'street',STREET);if(E.has(k+'v'))room(SX(i),SY(j),SW,GY*K+SW,'street',STREET);if(!adj.get(k).length)room(SX(i),SY(j),SW,SW,'street',STREET)}
   const SHOP=['빛 열매 가게','수정 공방','방울 음료집','별 지도 가게','알 부화소','둥둥차 정류장','반짝 옷 가게','소리 조개 가게','꿈 그림 전시관','촉수 미용실','우주버스 표 파는 곳','외계 책방','공 굴리기 놀이터','빛 목욕탕','둥근 학교'];
   const blocks=[];for(const [k,[i,j]] of nodes)if(E.has(k+'h')&&E.has(k+'v')&&E.has(key(i,j+1)+'h')&&E.has(key(i+1,j)+'v'))blocks.push([i,j]);
   blocks.sort((a,b)=>(a[0]-si0)**2+(a[1]-sj0)**2-((b[0]-si0)**2+(b[1]-sj0)**2));
   let si=0,ai=0;
   const wetQ=q=>q&&q.mean&&q.mean.fins>=.25&&Math.round(q.mean.legs)<1;let fishes=[...new Set([...W.species.filter(q=>q.count>0&&!q.civ&&!q.owner&&wetQ(q)),...Object.keys(c.zoo||{}).map(id=>spById(+id)).filter(wetQ)])];
   if(fishes.some(q=>q.mean.size>=4))fishes=fishes.filter(q=>q.mean.size>=4); // 원시 미생물보다 큰 물속 생물을 먼저 보여 줌
-  blocks.forEach(([i,j],n)=>{const x=SX(i)+24,y=SY(j)+24,w=136,h=96;
+  blocks.forEach(([i,j],n)=>{const x=SX(i)+SW,y=SY(j)+SW,w=GX*K-SW,h=GY*K-SW;
     if(up&&n===1){room(x-4,y-4,w+8,h+8,'space','우주버스장');return}
     if(n===0||n%11===6){room(x,y,w,h,'plaza',n===0?(up?'빛 중앙 홀':'빛 분수 광장'):'빛 공원');return}
     if(up&&n%4===2){ // 아쿠아리움: 큰 물탱크 2개, 사이로 걸어 다님
-      const tanks=[{x:x+10,y:y+8,w:116,h:30},{x:x+10,y:y+58,w:116,h:30}],qs=[];
-      tanks.forEach((tk,t)=>{solid.push(tk);const q=fishes.length?fishes[(ai*2+t)%fishes.length]:null;if(!q)return;qs.push(q.name);
-        for(let k=0;k<4;k++){const a=fakeAnimal(q,{...q.mean},tk.x+10+Math.random()*(tk.w-20),tk.y+8+Math.random()*(tk.h-16),3);a.room={x:tk.x+2,y:tk.y+2,w:tk.w-4,h:tk.h-4};a.fish=1;npc.push(a)}});
+      const tanks=[0,1,2].map(r=>({x:x+16,y:y+14+r*82,w:w-32,h:60})),qs=[];
+      tanks.forEach((tk,t)=>{solid.push(tk);const q=fishes.length?fishes[(ai*3+t)%fishes.length]:null;if(!q)return;qs.push(q.name);
+        for(let k=0;k<6;k++){const a=fakeAnimal(q,{...q.mean},tk.x+10+Math.random()*(tk.w-20),tk.y+8+Math.random()*(tk.h-16),3);a.room={x:tk.x+2,y:tk.y+2,w:tk.w-4,h:tk.h-4};a.fish=1;npc.push(a)}});
       ai++;room(x-4,y-4,w+8,h+8,'aqua',qs.length?'아쿠아리움 · '+[...new Set(qs)].join(', '):'아쿠아리움 (빈 물탱크)',{tanks});return}
-    for(let k=0;k<2;k++){const bx=x+6+k*66,nm=si%3===2?'이웃집':SHOP[si%SHOP.length];si++;bld.push({x:bx,y:y+8,w:58,h:80,name:nm,hue:(si*47+civ.id*13)%360,shape:si%3,door:{x:bx+29,y:(j%2?y+8:y+88)}})}});
+    const bw=(w-36)/2,bh=(h-36)/2;for(let k=0;k<4;k++){const bx=x+12+(k%2)*(bw+12),by=y+12+(k>>1)*(bh+12),nm=si%3===2?'이웃집':SHOP[si%SHOP.length];si++;bld.push({x:bx,y:by,w:bw,h:bh,name:nm,hue:(si*47+civ.id*13)%360,shape:si%3,door:{x:bx+bw/2,y:(k>>1)?by+bh:by}})}}); // 블록마다 큰 건물 4채
   // 거리를 걷는 외계인 (일부는 애완동물과 함께) + 둥둥차 — 섬이 클수록 많이
   const NL=[...nodes.values()],rn=()=>NL[Math.random()*NL.length|0];
   const pets=Object.entries(c.pets||{}).filter(([,n])=>n>0).map(([id])=>spById(+id)).filter(Boolean);
-  for(let k=0;k<Math.min(70,NL.length*2);k++){const [ni,nj]=rn(),a=fakeAnimal(csp,{...csp.mean},SX(ni)+12,SY(nj)+12,4.5);a.walk=1;a.ni=ni;a.nj=nj;a.tx=a.x;a.ty=a.y;walk.push(a);
+  for(let k=0;k<Math.min(160,NL.length*3);k++){const [ni,nj]=rn(),a=fakeAnimal(csp,{...csp.mean},SX(ni)+SW/2,SY(nj)+SW/2,4.5);a.walk=1;a.ni=ni;a.nj=nj;a.tx=a.x;a.ty=a.y;walk.push(a);
     if(pets.length&&Math.random()<.4){const q=pets[Math.random()*pets.length|0],pt=fakeAnimal(q,{...q.mean},a.x,a.y-6,3);pt.owner=a;walk.push(pt)}}
-  if(!up)for(let k=0;k<Math.min(24,NL.length/2|0)+2;k++){const [ni,nj]=rn();cars.push({x:SX(ni)+12,y:SY(nj)+12,ni,nj,tx:SX(ni)+12,ty:SY(nj)+12,h:Math.random()*360,vx:1,vy:0})}
+  if(!up)for(let k=0;k<Math.min(24,NL.length/2|0)+2;k++){const [ni,nj]=rn();cars.push({x:SX(ni)+SW/2,y:SY(nj)+SW/2,ni,nj,tx:SX(ni)+SW/2,ty:SY(nj)+SW/2,h:Math.random()*360,vx:1,vy:0})}
   if(!up){ // 내 집: 처음 한 번 정하면 계속 같은 집
     const hk=b=>Math.round(b.door.x)+','+Math.round(b.door.y);let h=W.myHome&&W.myHome.civ===civ.id&&bld.find(b=>hk(b)===W.myHome.k);
     if(!h){h=bld.find(b=>b.name==='이웃집');if(h){W.myHome={civ:civ.id,k:hk(h)};toast('땅속 도시에 내 집이 생겼어요! 작은 지도의 초록 점이에요')}}
     if(h){h.name='내 집';h.mine=true;h.hue=130}}
-  const bb=up?{x0:Math.min(...NL.map(n=>SX(n[0])))-6,x1:Math.max(...NL.map(n=>SX(n[0])))+30,y0:Math.min(...NL.map(n=>SY(n[1])))-6,y1:Math.max(...NL.map(n=>SY(n[1])))+30}:{x0:SX(iMin)-6,x1:Math.max(...NL.map(n=>SX(n[0])))+30,y0:Math.min(...NL.map(n=>SY(n[1])))-6,y1:Math.max(...NL.map(n=>SY(n[1])))+30};
+  const bb=up?{x0:Math.min(...NL.map(n=>SX(n[0])))-6,x1:Math.max(...NL.map(n=>SX(n[0])))+SW+6,y0:Math.min(...NL.map(n=>SY(n[1])))-6,y1:Math.max(...NL.map(n=>SY(n[1])))+SW+6}:{x0:SX(iMin)-6,x1:Math.max(...NL.map(n=>SX(n[0])))+SW+6,y0:Math.min(...NL.map(n=>SY(n[1])))-6,y1:Math.max(...NL.map(n=>SY(n[1])))+SW+6};
   let ei=si0,ej=sj0;if(at){let bd=1e18;for(const [i,j] of NL){const d=(wx(i)-at.x)**2+(wy(j)-at.y)**2;if(d<bd){bd=d;ei=i;ej=j}}} // 밟은 곳에서 가장 가까운 출입문
-  const ex=up?{x:SX(ei)+12,y:SY(ej)+12}:{x:205,y:130};if(up){me.x=ex.x;me.y=ex.y}
-  const exits=up?[]:[ex];if(up)for(const g of c.gates||[]){let bn=null,bd=1e18;for(const [i,j] of NL){const d=(wx(i)-g.x)**2+(wy(j)-g.y)**2;if(d<bd){bd=d;bn=[i,j]}}if(bn&&!exits.some(e=>e.x===SX(bn[0])+12&&e.y===SY(bn[1])+12))exits.push({x:SX(bn[0])+12,y:SY(bn[1])+12})} // 바깥 입구마다 안쪽 출입문
-  W.inside={c,civ,up,R,npc,solid,me,bld,walk,cars,SX,SY,adj,NL,bb,key,exit:ex,exits,exitW:{x:wx(ei),y:wy(ej)},H:Math.max(400,196+rows*86),cam:{x:me.x,y:me.y},pl:up?[]:Array.from({length:40},()=>({r:homes[2],x:Math.random(),y:Math.random(),h:Math.random()*360}))};
+  const ex=up?{x:SX(ei)+SW/2,y:SY(ej)+SW/2}:{x:205,y:130};if(up){me.x=ex.x;me.y=ex.y}
+  const exits=up?[]:[ex];if(up)for(const g of c.gates||[]){let bn=null,bd=1e18;for(const [i,j] of NL){const d=(wx(i)-g.x)**2+(wy(j)-g.y)**2;if(d<bd){bd=d;bn=[i,j]}}if(bn&&!exits.some(e=>e.x===SX(bn[0])+SW/2&&e.y===SY(bn[1])+SW/2))exits.push({x:SX(bn[0])+SW/2,y:SY(bn[1])+SW/2})} // 바깥 입구마다 안쪽 출입문
+  W.inside={c,civ,up,K,SW,R,npc,solid,me,bld,walk,cars,SX,SY,adj,NL,bb,key,exit:ex,exits,exitW:{x:wx(ei),y:wy(ej)},H:Math.max(400,196+rows*86),cam:{x:me.x,y:me.y},pl:up?[]:Array.from({length:40},()=>({r:homes[2],x:Math.random(),y:Math.random(),h:Math.random()*360}))};
   toast(up?'하나로 이어진 큰 건물에 들어왔어요! 섬 전체가 건물이에요':zl.length?`땅속으로 내려왔어요! 아래쪽에 동물 보호소가 있어요`:'땅속으로 내려왔어요!');
 }
 function exitInside(){if(!W.inside)return;const I=W.inside,up=I.up;W.inside=null;
-  if(up&&W.player){const P=W.player,g=nearestGate(I.c,I.me);if(g){P.x=g.px;P.y=g.py;cam.x=P.x;cam.y=P.y}} // 가장 가까운 입구 부두로 나감
+  if(up&&W.player){const P=W.player,g=nearestGate(I.c,{x:I.me.x/I.K,y:I.me.y/I.K});if(g){P.x=g.px;P.y=g.py;cam.x=P.x;cam.y=P.y}} // 가장 가까운 입구 부두로 나감
   if(!up&&W.player&&!I.c.water&&I.c.gates){enterInside(true,I.c,{x:I.c.under.x,y:I.c.under.y});toast('땅 위 큰 건물로 올라왔어요');return} /* 땅속 → 바로 위 큰 건물 안 */
   toast(up?'건물 밖으로 나왔어요':'다시 땅 위로 올라왔어요')}
 const inWalk=(x,y)=>W.inside.R.some(r=>x>=r.x+2&&x<=r.x+r.w-2&&y>=r.y+2&&y<=r.y+r.h-2)&&!(W.inside.solid||[]).some(r=>x>r.x-3&&x<r.x+r.w+3&&y>r.y-3&&y<r.y+r.h+3);
@@ -1405,7 +1413,9 @@ function enterShop(b){
   else{const keeper=fakeAnimal(csp,{...csp.mean},100,10,4.5);keeper.room={x:56,y:6,w:88,h:8};npc.push(keeper)}
   if(!home)for(let k=0;k<2+(Math.random()*3|0);k++){const a=fakeAnimal(csp,{...csp.mean},40+Math.random()*120,100+Math.random()*15,4.5);a.room={x:30,y:36,w:140,h:84};npc.push(a)}
   const me=fakeAnimal(I.me.sp,I.me.g,W0/2,H0-14,4.5);me.vy=-1;
-  I.shop={b,kind,line,floor,solid,items,npc,me,W:W0,H:H0,cam:{x:W0/2,y:H0/2}};
+  const SC=2;for(const r of solid){r.x*=SC;r.y*=SC;r.w*=SC;r.h*=SC}for(const it of items){it.x*=SC;it.y*=SC} // 방을 2배로 넓게
+  for(const a of npc){a.x*=SC;a.y*=SC;a.tx=a.x;a.ty=a.y;const r=a.room;a.room={x:r.x*SC,y:r.y*SC,w:r.w*SC,h:r.h*SC}}me.x*=SC;me.y=H0*SC-14;
+  I.shop={b,kind,line,floor,solid,items,npc,me,W:W0*SC,H:H0*SC,sc:SC,cam:{x:me.x,y:me.y}};
   toast(`${b.name}에 들어왔어요!`);
 }
 function exitShop(){const I=W.inside,b=I.shop.b;if(I.surface){W.inside=null;toast('다시 밖으로 나왔어요');return}I.shop=null;I.me.x=b.door.x;I.me.y=b.door.y+(b.door.y>b.y+40?12:-12);toast('다시 거리로 나왔어요')}
@@ -1421,9 +1431,9 @@ function shopFrame(){
     const d=Math.hypot(a.tx-a.x,a.ty-a.y)||1,v=Math.random()<.4?0:.3;a.vx+=((a.tx-a.x)/d-a.vx)*.1;a.vy+=((a.ty-a.y)/d-a.vy)*.1;const nx=a.x+a.vx*v,ny=a.y+a.vy*v;if((a===S.npc[0]&&S.kind!=='myhome')||shopWalk(S,nx,ny)){a.x=nx;a.y=ny}}
   S.cam.x+=(o.x-S.cam.x)*.2;S.cam.y+=(o.y-S.cam.y)*.2;
   if(S.sleep>0){S.sleep--;if(S.sleep===0)toast('푹 잤어요! 개운해요')}
-  if(frame%10===0&&S.kind==='myhome'){const atB=o.x<74&&o.y<56,atD=o.y>S.H-22&&Math.abs(o.x-S.W/2)<20,n=(W.bag||[]).length;
+  if(frame%10===0&&S.kind==='myhome'){const atB=o.x<74*S.sc&&o.y<56*S.sc,atD=o.y>S.H-22&&Math.abs(o.x-S.W/2)<20,n=(W.bag||[]).length;
     setHTML('hud',`<b>🏠 내 집</b> · ${n?`사 온 물건 ${n}개가 집에 놓여 있어요`:'아직 물건이 없어요. 거리의 가게에서 사 오면 집에 놓여요'}`+(S.npc.some(a=>a.myPet)?'<br>애완동물이 집을 지키고 있어요':'')+(atB?`<br><button class="tb" onclick="W.inside.shop.sleep=200">🛏 잠자기</button>`:'<br><span style="opacity:.75">왼쪽 위 침대로 가면 잘 수 있어요</span>')+(atD?`<br><button class="tb" onclick="exitShop()">🚪 밖으로 나가기 (E)</button>`:''));return}
-  if(frame%10===0){const atC=o.y<44&&o.x>44&&o.x<156,atD=o.y>S.H-22&&Math.abs(o.x-S.W/2)<20;
+  if(frame%10===0){const atC=o.y<44*S.sc&&o.x>44*S.sc&&o.x<156*S.sc,atD=o.y>S.H-22&&Math.abs(o.x-S.W/2)<20;
     setHTML('hud',`<b>${S.b.name}</b> 안`+(atC?`<br>🗨 가게 주인: "${S.line}" <button class="tb" onclick="buyItem()">하나 사기</button>`:'<br><span style="opacity:.75">위쪽 계산대로 가면 가게 주인이 말을 걸어요</span>')+(atD?`<br><button class="tb" onclick="exitShop()">🚪 밖으로 나가기 (E)</button>`:'')+(W.bag&&W.bag.length?`<br><span style="opacity:.75">🎒 가방: ${W.bag.slice(-4).join(', ')}${W.bag.length>4?' 외 '+(W.bag.length-4)+'개':''}</span>`:''))}
 }
 function drawItem(k,x,y,h,t){const c=cx;
@@ -1444,7 +1454,7 @@ function drawShop(){
   cx.fillStyle='rgba(255,255,255,.04)';for(let x=0;x<S.W;x+=12)for(let y=0;y<S.H;y+=12)if((x+y)/12%2)cx.fillRect(x,y,12,12);
   cx.strokeStyle=`hsl(${S.b.hue},60%,60%)`;cx.lineWidth=4;cx.strokeRect(2,2,S.W-4,S.H-4);
   cx.fillStyle='#ffd27a';cx.fillRect(S.W/2-14,S.H-4,28,4); // 문
-  for(let k=0;k<6;k++){cx.fillStyle=`hsla(${(S.b.hue+60)%360},90%,75%,${.5+.3*Math.sin(t*.04+k)})`;cx.fillRect(20+k*30,2,10,3)} // 천장 빛
+  for(let k=0;k<S.W/32;k++){cx.fillStyle=`hsla(${(S.b.hue+60)%360},90%,75%,${.5+.3*Math.sin(t*.04+k)})`;cx.fillRect(20+k*30,2,10,3)} // 천장 빛
   for(const r of S.solid){
     if(r.k==='pool'){cx.fillStyle=S.kind==='bath'?'#3fa6d8':'#7a5a3a';cx.beginPath();cx.ellipse(r.x+r.w/2,r.y+r.h/2,r.w/2,r.h/2,0,0,6.283);cx.fill();
       if(S.kind==='bath'){cx.strokeStyle='rgba(255,255,255,.4)';cx.lineWidth=.6;for(let k=0;k<3;k++){cx.beginPath();cx.ellipse(r.x+r.w/2,r.y+r.h/2,(t*.2+k*12)%36,(t*.2+k*12)%36*.55,0,0,6.283);cx.stroke()}}
@@ -1465,9 +1475,9 @@ function insideFrame(){
   if(W.inside.shop){shopFrame();return}
   const I=W.inside,o=I.me;
   const dx=(keys.arrowright||keys.d||padK.r?1:0)-(keys.arrowleft||keys.a||padK.l?1:0),dy=(keys.arrowdown||keys.s||padK.d?1:0)-(keys.arrowup||keys.w||padK.u?1:0);
-  if(dx||dy){const L=Math.hypot(dx,dy),v=1.3,nx=o.x+dx/L*v,ny=o.y+dy/L*v;o.vx=dx/L;o.vy=dy/L;o.age++;
+  if(dx||dy){const L=Math.hypot(dx,dy),v=2.2,nx=o.x+dx/L*v,ny=o.y+dy/L*v;o.vx=dx/L;o.vy=dy/L;o.age++;
     if(inWalk(nx,ny)){o.x=nx;o.y=ny}else if(inWalk(nx,o.y))o.x=nx;else if(inWalk(o.x,ny))o.y=ny}
-  const nextNode=a=>{const d=I.adj.get(I.key(a.ni,a.nj))||[];if(d.length){const [u,v]=d[Math.random()*d.length|0];a.ni=u;a.nj=v}a.tx=I.SX(a.ni)+12+(Math.random()-.5)*10;a.ty=I.SY(a.nj)+12+(Math.random()-.5)*10};
+  const nextNode=a=>{const d=I.adj.get(I.key(a.ni,a.nj))||[];if(d.length){const [u,v]=d[Math.random()*d.length|0];a.ni=u;a.nj=v}a.tx=I.SX(a.ni)+I.SW/2+(Math.random()-.5)*20;a.ty=I.SY(a.nj)+I.SW/2+(Math.random()-.5)*20};
   for(const a of I.walk){a.age++;
     if(a.owner){const o2=a.owner,dx=o2.x-a.x,dy=o2.y-a.y,d=Math.hypot(dx,dy)||1;if(d>7){a.vx=dx/d;a.vy=dy/d;a.x+=a.vx*.45;a.y+=a.vy*.45}continue} // 애완동물은 주인을 따라감
     const dx=a.tx-a.x,dy=a.ty-a.y,d=Math.hypot(dx,dy);if(d<1)nextNode(a);else{a.vx=dx/d;a.vy=dy/d;a.x+=a.vx*.35;a.y+=a.vy*.35}}
@@ -1475,7 +1485,7 @@ function insideFrame(){
   for(const a of I.npc){const r=a.room;a.age++;if(Math.hypot(a.tx-a.x,a.ty-a.y)<1.5||Math.random()<.004){a.tx=r.x+8+Math.random()*(r.w-16);a.ty=r.y+8+Math.random()*(r.h-16)}
     const d=Math.hypot(a.tx-a.x,a.ty-a.y)||1,v=Math.random()<.3?0:.35;a.vx+=((a.tx-a.x)/d-a.vx)*.1;a.vy+=((a.ty-a.y)/d-a.vy)*.1;a.x+=a.vx*v;a.y+=a.vy*v}
   I.cam.x+=(o.x-I.cam.x)*.2;I.cam.y+=(o.y-I.cam.y)*.2;
-  if(frame%10===0){const r=I.R.find(r=>r.kind!=='door'&&o.x>=r.x&&o.x<=r.x+r.w&&o.y>=r.y&&o.y<=r.y+r.h),lift=I.exits.some(e=>Math.hypot(o.x-e.x,o.y-e.y)<16),onPad=r&&r.kind==='space'&&Math.hypot(o.x-(r.x+r.w/2),o.y-(r.y+r.h/2))<30,overU=I.up&&I.c.under&&Math.hypot(o.x-I.c.under.x,o.y-I.c.under.y)<I.c.under.r;
+  if(frame%10===0){const r=I.R.find(r=>r.kind!=='door'&&o.x>=r.x&&o.x<=r.x+r.w&&o.y>=r.y&&o.y<=r.y+r.h),lift=I.exits.some(e=>Math.hypot(o.x-e.x,o.y-e.y)<16),onPad=r&&r.kind==='space'&&Math.hypot(o.x-(r.x+r.w/2),o.y-(r.y+r.h/2))<80,overU=I.up&&I.c.under&&Math.hypot(o.x-I.c.under.x*I.K,o.y-I.c.under.y*I.K)<I.c.under.r*I.K;
     let place=r?(r.kind==='zoo'?'동물 보호소 · '+r.label:r.label):'통로';
     if(r&&r.kind==='street'){let b0=null,bd=55*55;for(const b of I.bld){const d=(b.door.x-o.x)**2+(b.door.y-o.y)**2;if(d<bd){bd=d;b0=b}}if(b0)place+=' · <b>'+b0.name+'</b> 앞'}
     const sn=shopNear();
@@ -1484,7 +1494,7 @@ function insideFrame(){
 function drawInside(){
   if(W.inside.space){drawSpace();return}
   if(W.inside.shop){drawShop();return}
-  const I=W.inside,d=devicePixelRatio||1,z=Math.max(cv.width,cv.height*1.4)/230,t=frame;
+  const I=W.inside,d=devicePixelRatio||1,z=Math.max(cv.width,cv.height*1.4)/(I.me.x>420||I.up?400:230),t=frame; // 거리·큰 건물은 넓게 보여 줌
   const UP=I.up;cx.setTransform(1,0,0,1,0,0);cx.fillStyle=UP?'#152029':'#1b120c';cx.fillRect(0,0,cv.width,cv.height);
   cx.setTransform(z,0,0,z,cv.width/2-I.cam.x*z,cv.height/2-I.cam.y*z);
   const v0x=I.cam.x-cv.width/2/z-30,v1x=I.cam.x+cv.width/2/z+30,v0y=I.cam.y-cv.height/2/z-30,v1y=I.cam.y+cv.height/2/z+30,inV=(x,y,w,h)=>x+w>v0x&&x<v1x&&y+h>v0y&&y<v1y; // 화면에 보이는 곳만 그림
@@ -1502,9 +1512,9 @@ function drawInside(){
     if(r.kind==='plaza'){const x=r.x+r.w/2,y=r.y+r.h/2;cx.fillStyle='#3b6e9a';cx.beginPath();cx.arc(x,y,24,0,6.283);cx.fill();
       for(let k=0;k<8;k++){const an=k/8*6.283+t*.02,L=10+4*Math.sin(t*.15+k);cx.strokeStyle=`hsla(${190+k*15},90%,75%,.8)`;cx.lineWidth=1.2;cx.beginPath();cx.moveTo(x,y);cx.lineTo(x+Math.cos(an)*L,y+Math.sin(an)*L);cx.stroke()}
       cx.fillStyle='#bff3ff';cx.beginPath();cx.moveTo(x,y-9);cx.lineTo(x+4,y);cx.lineTo(x,y+9);cx.lineTo(x-4,y);cx.fill()} // 수정 분수
-    if(r.kind==='space'){const x=r.x+r.w/2,y=r.y+r.h/2;cx.fillStyle='#2b2f45';cx.beginPath();cx.arc(x,y,40,0,6.283);cx.fill();
-      for(let k=0;k<12;k++){const an=k/12*6.283;cx.fillStyle=(k+(t>>3))%3?'#3a4a70':'#9fe8ff';cx.beginPath();cx.arc(x+Math.cos(an)*36,y+Math.sin(an)*36,2,0,6.283);cx.fill()} // 발사대 불빛
-      drawBus(x,y,0,1)}
+    if(r.kind==='space'){const x=r.x+r.w/2,y=r.y+r.h/2,R=Math.min(r.w,r.h)*.42;cx.fillStyle='#2b2f45';cx.beginPath();cx.arc(x,y,R,0,6.283);cx.fill();
+      for(let k=0;k<20;k++){const an=k/20*6.283;cx.fillStyle=(k+(t>>3))%3?'#3a4a70':'#9fe8ff';cx.beginPath();cx.arc(x+Math.cos(an)*R*.9,y+Math.sin(an)*R*.9,3,0,6.283);cx.fill()} // 발사대 불빛
+      drawBus(x,y,0,2.5)}
     if(r.kind==='aqua')for(const tk of r.tanks){cx.fillStyle='#1f6fa8';cx.fillRect(tk.x,tk.y,tk.w,tk.h);cx.fillStyle='rgba(120,220,255,.25)';cx.fillRect(tk.x,tk.y,tk.w,4);
       for(let k=0;k<6;k++){const bx=tk.x+8+(k*29%(tk.w-16)),by=tk.y+tk.h-2-((t*.4+k*9)%(tk.h-4));cx.fillStyle='rgba(220,250,255,.6)';cx.beginPath();cx.arc(bx,by,.9,0,6.283);cx.fill()} // 물방울
       cx.fillStyle='#3a7a4a';for(let k=0;k<4;k++){const px=tk.x+12+k*30;cx.beginPath();cx.moveTo(px,tk.y+tk.h);cx.quadraticCurveTo(px+4*Math.sin(t*.03+k),tk.y+tk.h-10,px+1,tk.y+tk.h-16);cx.lineTo(px+3,tk.y+tk.h);cx.fill()} // 물풀
@@ -1524,7 +1534,7 @@ function drawInside(){
   for(const r of I.R)if(r.kind==='door'){cx.fillStyle=FL.door;cx.fillRect(r.x+1,r.y,r.w-2,r.h)}
   // 중앙 승강기 (땅속) / 출입문 (땅 위 큰 건물)
   if(UP)for(const e of I.exits){if(!inV(e.x-20,e.y-20,40,40))continue;cx.fillStyle=`rgba(255,220,120,${.25+.15*Math.sin(t*.08)})`;cx.beginPath();cx.arc(e.x,e.y,16,0,6.283);cx.fill();cx.fillStyle='#ffd27a';cx.fillRect(e.x-10,e.y-3,20,6);cx.fillStyle='#fff';cx.font='bold 6px sans-serif';cx.textAlign='center';cx.fillText('출입문',e.x,e.y-8)}
-  if(UP&&I.c.under){const u=I.c.under;cx.strokeStyle='rgba(120,220,255,.6)';cx.lineWidth=1.5;cx.setLineDash([5,4]);cx.beginPath();cx.arc(u.x,u.y,u.r,0,6.283);cx.stroke();cx.setLineDash([]);cx.fillStyle='#bfefff';cx.font='bold 6px sans-serif';cx.textAlign='center';cx.fillText('⬇ 이 아래가 땅속 도시',u.x,u.y-u.r+10)}
+  if(UP&&I.c.under){const K=I.K,u={x:I.c.under.x*K,y:I.c.under.y*K,r:I.c.under.r*K};cx.strokeStyle='rgba(120,220,255,.6)';cx.lineWidth=2;cx.setLineDash([8,6]);cx.beginPath();cx.arc(u.x,u.y,u.r,0,6.283);cx.stroke();cx.setLineDash([]);cx.fillStyle='#bfefff';cx.font='bold 9px sans-serif';cx.textAlign='center';cx.fillText('⬇ 이 아래가 땅속 도시',u.x,u.y-u.r+14)}
   if(!UP){cx.fillStyle='#8899aa';cx.beginPath();cx.arc(205,130,10,0,6.283);cx.fill();cx.strokeStyle=`rgba(120,220,255,${.5+.4*Math.sin(t*.1)})`;cx.lineWidth=1.5;cx.stroke();
   cx.fillStyle='#fff';cx.font='bold 7px sans-serif';cx.textAlign='center';cx.fillText('⬆',205,133)}
   // 가게·집 (위에서 본 지붕 + 빛 창문 + 간판)
@@ -1536,7 +1546,7 @@ function drawInside(){
     if(b.mine){cx.strokeStyle='#7dff9a';cx.lineWidth=1.5;cx.strokeRect(b.x-2,b.y-2,b.w+4,b.h+4);cx.fillStyle='#7dff9a';cx.beginPath();cx.moveTo(b.x+b.w/2,b.y-14);cx.lineTo(b.x+b.w/2+9,b.y-6);cx.lineTo(b.x+b.w/2-9,b.y-6);cx.fill();cx.fillRect(b.x+b.w/2-6,b.y-6,12,6)} // 내 집 지붕 표시
     cx.font='bold 5px sans-serif';cx.textAlign='center';const w=cx.measureText(b.name).width+4;cx.fillStyle='rgba(0,0,0,.6)';cx.fillRect(b.x+b.w/2-w/2,b.y+b.h/2-4,w,7);cx.fillStyle=`hsl(${(b.hue+60)%360},90%,80%)`;cx.fillText(b.name,b.x+b.w/2,b.y+b.h/2+1.8)}
   // 가로등 (네거리마다)
-  for(const [i,j] of I.NL){const x=I.SX(i)+2,y=I.SY(j)+2;if(!inV(x-14,y-14,28,28))continue;cx.fillStyle='rgba(255,230,150,.12)';cx.beginPath();cx.arc(x,y,14,0,6.283);cx.fill();cx.fillStyle='#ffe9a8';cx.beginPath();cx.arc(x,y,1.6,0,6.283);cx.fill()}
+  for(const [i,j] of I.NL){const x=I.SX(i)+I.SW/2,y=I.SY(j)+I.SW/2;if(!inV(x-14,y-14,28,28))continue;cx.fillStyle='rgba(255,230,150,.12)';cx.beginPath();cx.arc(x,y,14,0,6.283);cx.fill();cx.fillStyle='#ffe9a8';cx.beginPath();cx.arc(x,y,1.6,0,6.283);cx.fill()}
   // 둥둥차
   for(const v of I.cars){if(!inV(v.x-10,v.y-10,20,20))continue;const a=Math.atan2(v.vy,v.vx);cx.save();cx.translate(v.x,v.y);cx.rotate(a);cx.fillStyle=`rgba(120,240,255,${.25+.15*Math.sin(t*.3)})`;cx.beginPath();cx.ellipse(0,0,10,6,0,0,6.283);cx.fill();
     cx.fillStyle=`hsl(${v.h},70%,55%)`;cx.beginPath();cx.ellipse(0,0,7,4,0,0,6.283);cx.fill();cx.fillStyle='rgba(220,250,255,.8)';cx.beginPath();cx.ellipse(1.5,0,3,2.2,0,0,6.283);cx.fill();cx.restore()}
