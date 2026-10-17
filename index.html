@@ -673,7 +673,7 @@ const landCity=(x,y)=>{const u=URB[tIdx(x,y)],cc=u&&W.civs[u-1];return cc&&cc.ci
 function nearPier(x,y){for(const civ of W.civs){const c=civ.city;if(!c||!c.gates)continue;for(const g of c.gates)if((g.x+g.dx*10-x)**2+(g.y+g.dy*10-y)**2<64)return true}return false}
 function gateNear(o){let best=null,bd=20*20;for(const civ of W.civs){const c=civ.city;if(!c||!c.gates)continue;for(const g of c.gates){const d=(g.px-o.x)**2+(g.py-o.y)**2;if(d<bd){bd=d;best={g,c}}}}return best}
 function nearestGate(c,o){let best=null,bd=1e18;for(const g of c.gates||[]){const d=(g.x-o.x)**2+(g.y-o.y)**2;if(d<bd){bd=d;best=g}}return best}
-const canGo=(g,x,y)=>nearPier(x,y)||!landCity(x,y)&&canLive(g,x,y); // 건물 지붕 위로는 못 걸어감, 부두는 걸을 수 있음
+const canGo=(g,x,y)=>x>1&&y>1&&x<WW-1&&y<WH-1; // 조종할 땐 어디든: 지붕 위도 걷고, 물에선 헤엄침 (건물 안은 입구 버튼으로만)
 function drawGates(c,z){const tt=performance.now()/300;
   for(const civ of W.civs){const ct=civ.city;if(!ct||ct.water||!ct.gates)continue;
     for(const g of ct.gates){c.save();c.translate(g.x,g.y);c.rotate(Math.atan2(g.dy,g.dx));
@@ -870,6 +870,7 @@ function draw(){
   drawGates(cx,z); // 땅 위 도시는 큰 건물 하나라 따로 집을 안 그림
   drawLeashes(cx,z,vis);
   for(const o of W.animals)if(vis(o))drawAnimal(cx,o,z,o.age+o.ph);
+  {const P=W.player;if(P&&!W.inside&&waterAt(P.x,P.y)&&!nearPier(P.x,P.y)){const tt=performance.now()/400;cx.strokeStyle='rgba(220,245,255,.7)';cx.lineWidth=.6;for(let k=0;k<2;k++){cx.beginPath();cx.arc(P.x,P.y,4+((tt+k*.5)%1)*6,0,6.283);cx.stroke()}}} // 헤엄칠 때 물결
   if(W.selSp){cx.strokeStyle='rgba(255,255,255,.7)';cx.lineWidth=1.5/z;const L=W.selSp.kind==='a'?W.animals:W.plants;for(const o of L)if(o.sp===W.selSp&&vis(o)){cx.beginPath();cx.arc(o.x,o.y,o.size*(o.maxS===undefined?AK:1)*1.6+3,0,6.283);cx.stroke()}}
   if(W.sel&&!W.sel.dead){cx.strokeStyle='#ffd34d';cx.lineWidth=2.5/z;cx.beginPath();cx.arc(W.sel.x,W.sel.y,W.sel.size*(W.sel.maxS===undefined?AK:1)*1.8+4,0,6.283);cx.stroke()}
   if(hover&&PAINT.includes(tool)){cx.strokeStyle='rgba(255,255,255,.6)';cx.lineWidth=1.5/z;cx.beginPath();cx.arc(hover[0],hover[1],brush*TS,0,6.283);cx.stroke()}
@@ -1287,16 +1288,15 @@ const BNAME={plaza:'광장',dome:'빛 창문 둥근 집',tower:'육각 탑',crys
 function driveFrame(){
   const o=W.player;if(!o)return;if(o.dead){stopDrive();return}
   const dx=(keys.arrowright||keys.d||padK.r?1:0)-(keys.arrowleft||keys.a||padK.l?1:0),dy=(keys.arrowdown||keys.s||padK.d?1:0)-(keys.arrowup||keys.w||padK.u?1:0);
-  if(dx||dy){const L=Math.hypot(dx,dy),sp=1.6,nx=clamp(o.x+dx/L*sp,1,WW-1),ny=clamp(o.y+dy/L*sp,1,WH-1);o.vx=dx/L*.5;o.vy=dy/L*.5;o.age++;
+  if(dx||dy){const swim=waterAt(o.x,o.y)&&!nearPier(o.x,o.y),L=Math.hypot(dx,dy),sp=swim&&o.g.fins<.25?.9:1.6,nx=clamp(o.x+dx/L*sp,1,WW-1),ny=clamp(o.y+dy/L*sp,1,WH-1);o.vx=dx/L*.5;o.vy=dy/L*.5;o.age++;
     if(canGo(o.g,nx,ny)){o.x=nx;o.y=ny}else if(canGo(o.g,nx,o.y))o.x=nx;else if(canGo(o.g,o.x,ny))o.y=ny}
   cam.x+=(o.x-cam.x)*.25;cam.y+=(o.y-cam.y)*.25;
-  {const lc=landCity(o.x,o.y);if(lc&&!nearPier(o.x,o.y)){const g=nearestGate(lc,o);if(g){o.x=g.px;o.y=g.py}}} // 지붕 위에 있으면 가까운 입구 앞으로
   for(const a of W.animals){if(a===o||a.dead||Math.abs(a.x-o.x)>260||Math.abs(a.y-o.y)>180)continue; // 실시간: 근처 생물만 살살 걸어 다님
     a.hd+=(Math.random()-.5)*.3;const v=.12+a.g.speed*.15,nx=a.x+Math.cos(a.hd)*v,ny=a.y+Math.sin(a.hd)*v;
     if(canLive(a.g,nx,ny)){a.x=nx;a.y=ny;a.vx=Math.cos(a.hd);a.vy=Math.sin(a.hd)}else a.hd+=Math.PI*.7;a.ph+=.05}
   if(frame%10===0){ // 지금 있는 곳 안내
-    let where=TYPE_N(tIdx(o.x,o.y)),near='',nd=24*24;const civOf=URB[tIdx(o.x,o.y)];
-    if(civOf){const civ=W.civs[civOf-1];if(civ)where=spById(civ.id).name+' 도시'}
+    let where=TYPE_N(tIdx(o.x,o.y))+(landCity(o.x,o.y)?' · 건물 지붕 위':waterAt(o.x,o.y)&&!nearPier(o.x,o.y)?' · 헤엄치는 중':''),near='',nd=24*24;const civOf=URB[tIdx(o.x,o.y)];
+    if(civOf){const civ=W.civs[civOf-1];if(civ)where=spById(civ.id).name+' 도시'+(landCity(o.x,o.y)?' · 건물 지붕 위':'')}
     for(const civ of W.civs){const c=civ.city;if(!c)continue;
       for(const b of c.b){const d=(b.x-o.x)**2+(b.y-o.y)**2;if(d<nd){nd=d;near=BNAME[b.type]||'건물'}}
       for(const [q,n] of [[c.airport,'공항'],[c.spaceport,'우주버스장']])if(q&&(q.x-o.x)**2+(q.y-o.y)**2<45*45){near=n;nd=0}
