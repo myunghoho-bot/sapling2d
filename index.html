@@ -528,7 +528,7 @@ function foundCity(civ,sp){
   let x=0,y=0;for(const o of L){x+=o.x;y+=o.y}x/=L.length;y/=L.length;
   const water=sp.land<.3;if(waterAt(x,y)!==water){const o=L[0];x=o.x;y=o.y}
   const city={pop:0,x,y,water,b:[],r:30,hue:sp.hue,tiles:[],ci:W.civs.indexOf(civ)+1,island:0,airport:null,spaceport:null};civ.city=city;
-  seedTiles(city);
+  seedTiles(city);x=city.x;y=city.y;
   city.b.push({x,y,type:'plaza',p:-1,s:9,ph:0});
   for(let k=0;k<3;k++)addBuilding(city);
   city.under=!water&&Math.random()<.5?makeUnder(city):null; // 절반쯤은 땅속 거대 건물에서 삶
@@ -550,6 +550,15 @@ const inCityAt=(c,x,y)=>URB[tIdx(x,y)]===c.ci||(x-c.x)**2+(y-c.y)**2<c.r*c.r;
 const urbOK=(c,t)=>c.water?(isWater(t)&&H[t]>WL-.12):(!isWater(t)); // 땅 종족은 땅, 물 종족은 얕은 바다에 퍼짐
 // 시가지 시작: 도시 가운데에서 가장 가까운 알맞은 칸부터 (가운데가 물가 경계에 걸려도 시작할 수 있게)
 function seedTiles(c){
+  if(!c.water){ // 땅 도시: 가까우면서 큰 빈 섬을 골라 처음부터 섬 전체를 건물로 덮음 (작은 건물 하나로 시작하지 않게)
+    const comp=new Int32Array(TW*TH).fill(-1),info=[];
+    for(let t=0;t<TW*TH;t++){if(comp[t]>=0||isWater(t)||URB[t])continue;const id=info.length,q=[t];let n=0,best=t,bd=1e18;comp[t]=id;
+      while(q.length){const u=q.pop();n++;const d=(((u%TW)+.5)*TS-c.x)**2+(((u/TW|0)+.5)*TS-c.y)**2;if(d<bd){bd=d;best=u}
+        for(const nb of [u%TW>0?u-1:-1,u%TW<TW-1?u+1:-1,u-TW,u+TW])if(nb>=0&&nb<TW*TH&&comp[nb]<0&&!isWater(nb)&&!URB[nb]){comp[nb]=id;q.push(nb)}}
+      info.push({n,best,d:Math.sqrt(bd)})}
+    if(!info.length)return false;
+    info.sort((a,b)=>b.n/(1+b.d/300)-a.n/(1+a.d/300));const st=info[0].best;
+    c.x=(st%TW+.5)*TS;c.y=((st/TW|0)+.5)*TS;c.island=info[0].n;urbanize(c,st);fillIsland(c);return true}
   const cx0=c.x/TS|0,cy0=c.y/TS|0;let st=-1;
   for(let r=0;r<12&&st<0;r++)for(let dy=-r;dy<=r&&st<0;dy++)for(let dx=-r;dx<=r;dx++){const tx=cx0+dx,ty=cy0+dy;if(tx<0||ty<0||tx>=TW||ty>=TH)continue;const t=ty*TW+tx;if(urbOK(c,t)&&!URB[t]){st=t;break}}
   if(st<0)return false;
